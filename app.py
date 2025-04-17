@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from rectpack import newPacker
+import os  # AGGIUNGI QUESTA IMPORT
 
 app = Flask(__name__)
 
@@ -36,3 +37,8 @@ def pack():
             })
 
     return jsonify(packed_rects)
+
+# ⬇️ AGGIUNGI QUESTO BLOCCO IN FONDO
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))  # Porta per Render
+    app.run(host="0.0.0.0", port=port)
