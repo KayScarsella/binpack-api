@@ -1,8 +1,10 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS 
 from rectpack import newPacker
 import os  # AGGIUNGI QUESTA IMPORT
 
 app = Flask(__name__)
+CORS(app) 
 
 @app.route("/", methods=["GET"])
 def home():
@@ -14,7 +16,7 @@ def pack():
 
     bin_width = data["bin_width"]
     bin_height = data["bin_height"]
-    rects = data["rectangles"]  # ciascuno: {id, w, h}
+    rects = data["rectangles"]
 
     packer = newPacker(rotation=True)
 
