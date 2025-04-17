@@ -1,10 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS 
 from rectpack import newPacker
-import os  # AGGIUNGI QUESTA IMPORT
 
 app = Flask(__name__)
-CORS(app) 
+CORS(app)
 
 @app.route("/", methods=["GET"])
 def home():
@@ -13,34 +12,37 @@ def home():
 @app.route("/pack", methods=["POST"])
 def pack():
     data = request.get_json()
+    
+    # Aggiunto controllo degli input
+    if not data or 'bin_width' not in data or 'bin_height' not in data or 'rectangles' not in data:
+        return jsonify({"error": "Dati mancanti o non validi"}), 400
 
-    bin_width = data["bin_width"]
-    bin_height = data["bin_height"]
-    rects = data["rectangles"]
+    try:
+        bin_width = int(data["bin_width"])
+        bin_height = int(data["bin_height"])
+        rects = data["rectangles"]
 
-    packer = newPacker(rotation=True)
+        packer = newPacker(rotation=True)
 
-    for r in rects:
-        packer.add_rect(r["w"], r["h"], r["id"])
+        for r in rects:
+            packer.add_rect(int(r["w"]), int(r["h"]), r["id"])
 
-    packer.add_bin(bin_width, bin_height)
-    packer.pack()
+        packer.add_bin(bin_width, bin_height)
+        packer.pack()
 
-    packed_rects = []
-    for abin in packer:
-        for rect in abin:
-            packed_rects.append({
-                "id": rect.rid,
-                "x": rect.x,
-                "y": rect.y,
-                "w": rect.width,
-                "h": rect.height,
-                "rotated": rect.rotation
-            })
+        packed_rects = []
+        for abin in packer:
+            for rect in abin:
+                packed_rects.append({
+                    "id": rect.rid,
+                    "x": rect.x,
+                    "y": rect.y,
+                    "w": rect.width,
+                    "h": rect.height,
+                    "rotated": rect.rotation
+                })
 
-    return jsonify(packed_rects)
+        return jsonify(packed_rects)
 
-# ⬇️ AGGIUNGI QUESTO BLOCCO IN FONDO
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # Porta per Render
-    app.run(host="0.0.0.0", port=port)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
