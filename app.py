@@ -13,7 +13,6 @@ def home():
 def pack():
     data = request.get_json()
     
-    # Aggiunto controllo degli input
     if not data or 'bin_width' not in data or 'bin_height' not in data or 'rectangles' not in data:
         return jsonify({"error": "Dati mancanti o non validi"}), 400
 
@@ -39,7 +38,8 @@ def pack():
                     "y": rect.y,
                     "w": rect.width,
                     "h": rect.height,
-                    "rotated": rect.rotation
+                    # Rimuovi la linea seguente se non supportata
+                    # "rotated": rect.rotation  # ⚠️ Questo causa l'errore
                 })
 
         return jsonify(packed_rects)
