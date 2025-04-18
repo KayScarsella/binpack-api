@@ -5,10 +5,6 @@ from rectpack import newPacker
 app = Flask(__name__)
 CORS(app)
 
-@app.route("/", methods=["GET"])
-def home():
-    return "Bin Pack API attiva"
-
 @app.route("/pack", methods=["POST"])
 def pack():
     data = request.get_json()
@@ -22,15 +18,28 @@ def pack():
         rects = data["rectangles"]
 
         packer = newPacker(rotation=True)
+
+        # Aggiungi tutti i rettangoli al packer
         for r in rects:
             packer.add_rect(int(r["w"]), int(r["h"]), r["id"])
 
-        # Continua ad aggiungere contenitori finché tutti i rettangoli non sono posizionati
         bins_used = 0
-        while packer.rect_list:  # Finché ci sono rettangoli non posizionati
+        max_bins = 100  # Limite massimo di contenitori per evitare cicli infiniti
+        prev_unplaced = len(packer.rect_list)  # Numero di rettangoli non posizionati
+
+        while packer.rect_list and bins_used < max_bins:
             packer.add_bin(bin_width, bin_height)
             bins_used += 1
             packer.pack()
+
+            # Controlla se il numero di rettangoli non posizionati è invariato
+            current_unplaced = len(packer.rect_list)
+            if current_unplaced == prev_unplaced:
+                break  # Esci dal ciclo se non ci sono progressi
+            prev_unplaced = current_unplaced
+
+        if packer.rect_list:
+            return jsonify({"error": "Impossibile posizionare tutti i rettangoli"}), 400
 
         packed_rects = []
         for abin in packer:
