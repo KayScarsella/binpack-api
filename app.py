@@ -22,12 +22,15 @@ def pack():
         rects = data["rectangles"]
 
         packer = newPacker(rotation=True)
-
         for r in rects:
             packer.add_rect(int(r["w"]), int(r["h"]), r["id"])
 
-        packer.add_bin(bin_width, bin_height)
-        packer.pack()
+        # Continua ad aggiungere contenitori finché tutti i rettangoli non sono posizionati
+        bins_used = 0
+        while packer.rect_list:  # Finché ci sono rettangoli non posizionati
+            packer.add_bin(bin_width, bin_height)
+            bins_used += 1
+            packer.pack()
 
         packed_rects = []
         for abin in packer:
@@ -38,8 +41,7 @@ def pack():
                     "y": rect.y,
                     "w": rect.width,
                     "h": rect.height,
-                    # Rimuovi la linea seguente se non supportata
-                    # "rotated": rect.rotation  # ⚠️ Questo causa l'errore
+                    "bin": bins_used,
                 })
 
         return jsonify(packed_rects)
