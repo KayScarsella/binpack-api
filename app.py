@@ -52,9 +52,10 @@ def pack():
                 })
 
         # Verifica se ci sono rettangoli non posizionati
-        if packer.rect_list():
+        unplaced_rects = [rect for rect in packer.rect_list() if rect[5] is None]
+        if unplaced_rects:
             return jsonify({
-                "error": f"Impossibile posizionare tutti i rettangoli (mancanti: {len(packer.rect_list())})",
+                "error": f"Impossibile posizionare tutti i rettangoli (mancanti: {len(unplaced_rects)})",
                 "packed": packed_rects
             }), 200
 
