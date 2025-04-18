@@ -31,34 +31,32 @@ def pack():
                 return jsonify({"error": f"Dimensione rettangolo non valida: {r}"}), 400
             packer.add_rect(w, h, rid=r["id"])
 
-        bins_used = 0
-        max_bins = 100  # Limite massimo di contenitori
-        packed_rects = []
-
-        while packer.rect_list() and bins_used < max_bins:
+        # Aggiungi tutti i contenitori prima di eseguire il packing
+        max_bins = 100
+        for _ in range(max_bins):
             packer.add_bin(bin_width, bin_height)
-            bins_used += 1
-            packer.pack()
 
-            # Aggiungi i rettangoli posizionati al risultato
-            for rect in packer[0]:
+        packer.pack()
+
+        # Recupera i rettangoli posizionati
+        packed_rects = []
+        for bin_index, abin in enumerate(packer):
+            for rect in abin:
                 packed_rects.append({
                     "id": rect.rid,
                     "x": rect.x,
                     "y": rect.y,
                     "w": rect.width,
                     "h": rect.height,
-                    "bin": bins_used,
+                    "bin": bin_index,
                 })
 
-            # Rimuovi i rettangoli già posizionati
-            packer.rect_list()[:] = [r for r in packer.rect_list() if r not in [rect.rid for rect in packer[0]]]
-
+        # Verifica se ci sono rettangoli non posizionati
         if packer.rect_list():
             return jsonify({
                 "error": f"Impossibile posizionare tutti i rettangoli (mancanti: {len(packer.rect_list())})",
                 "packed": packed_rects
-            }), 200  # Potresti voler usare 207 Partial Content invece
+            }), 200
 
         return jsonify(packed_rects)
 
