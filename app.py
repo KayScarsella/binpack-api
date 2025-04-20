@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS 
 from rectpack import newPacker
 from ortools.sat.python import cp_model
-from collections import defaultdict
 
 app = Flask(__name__)
 CORS(app)
