@@ -2,35 +2,61 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS 
 from rectpack import newPacker
 from ortools.sat.python import cp_model
+from collections import defaultdict
 
 app = Flask(__name__)
 CORS(app)
 
-def optimize_cuts(rectangles, container_width, container_height):
+def optimize_cuts(rectangles, container_width, container_height, max_dy=50):
     model = cp_model.CpModel()
     
-    # Variabili
-    delta_y = {r['id']: model.NewIntVar(0, 50, f'delta_{r["id"]}') for r in rectangles}
-    cuts_y = [model.NewBoolVar(f'cut_y_{y}') for y in range(0, container_height+1)]
+    # 1. Genera tutte le possibili linee di taglio candidate
+    all_y_coords = sorted({0, container_height} | 
+                         {r['y'] for r in rectangles} | 
+                         {r['y'] + r['h'] for r in rectangles})
     
-    # Vincoli
+    # 2. Variabili decisionali
+    delta_y = {r['id']: model.NewIntVar(0, max_dy, f'dy_{r["id"]}') for r in rectangles}
+    cut_active = {y: model.NewBoolVar(f'cut_{y}') for y in all_y_coords if 0 < y < container_height}
+    
+    # 3. Vincoli per ogni rettangolo e ogni linea di taglio
     for r in rectangles:
         y_new = r['y'] + delta_y[r['id']]
-        model.Add(y_new + r['h'] <= container_height)  # No overflow
         
-        # Vincolo di continuità del taglio
-        for other in rectangles:
-            if other != r:
-                model.Add(y_new + r['h'] <= other['y'] + delta_y[other['id']]).OnlyEnforceIf(cuts_y[y_new + r['h']])
+        # Vincolo contenitore
+        model.Add(y_new + r['h'] <= container_height)
+        
+        # Vincoli per ogni possibile linea di taglio
+        for y_cut in cut_active.keys():
+            # Variabile: il rettangolo è sopra questa linea?
+            is_above = model.NewBoolVar(f'above_{r["id"]}_{y_cut}')
+            model.Add(y_new >= y_cut).OnlyEnforceIf(is_above)
+            model.Add(y_new < y_cut).OnlyEnforceIf(is_above.Not())
+            
+            # Se il taglio è attivo, il rettangolo non può attraversarlo
+            model.Add(y_new + r['h'] <= y_cut).OnlyEnforceIf(
+                [cut_active[y_cut], is_above.Not()])
+            model.Add(y_new >= y_cut).OnlyEnforceIf(
+                [cut_active[y_cut], is_above])
+
+    # 4. Funzione obiettivo (minimizza spostamenti e massimizza tagli attivi)
+    model.Maximize(
+        sum(cut_active.values()) * 1000 -  # Prioritizza più tagli possibili
+        sum(delta_y.values())              # Poi minimizza gli spostamenti
+    )
     
-    # Funzione obiettivo
-    model.Minimize(sum(cuts_y) + sum(delta_y.values()))
-    
-    # Risoluzione
+    # 5. Risoluzione
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
     
-    return {r['id']: solver.Value(delta_y[r['id']]) for r in rectangles}
+    # 6. Risultati
+    if status == cp_model.OPTIMAL:
+        return {
+            'adjustments': {r['id']: solver.Value(delta_y[r['id']]) for r in rectangles},
+            'cuts': [y for y, var in cut_active.items() if solver.Value(var)],
+            'total_displacement': sum(solver.Value(dy) for dy in delta_y.values())
+        }
+    return None
 
 @app.route("/pack", methods=["POST"])
 def pack():
