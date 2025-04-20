@@ -10,13 +10,11 @@ def optimize_cuts(rectangles, container_width, container_height, max_dy=50):
     from ortools.sat.python import cp_model
     model = cp_model.CpModel()
 
-    # Crea mappa rettangoli per accesso rapido
-    rect_by_id = {r['id']: r for r in rectangles}
-    
-    # Crea variabili delta_y (spostamento iniziale)
+    # Crea variabili delta_y
     delta_y = {r['id']: model.NewIntVar(0, max_dy, f'dy_{r["id"]}') for r in rectangles}
-    
-    # Costruisci grafo delle dipendenze verticali
+    y_final = {r['id']: r['y'] + delta_y[r['id']] for r in rectangles}
+
+    # Costruisci grafo di dipendenza (spostamento a cascata)
     dependencies = {r['id']: set() for r in rectangles}
     for i in range(len(rectangles)):
         for j in range(len(rectangles)):
@@ -24,54 +22,44 @@ def optimize_cuts(rectangles, container_width, container_height, max_dy=50):
                 continue
             r1 = rectangles[i]
             r2 = rectangles[j]
-
-            # Verifica sovrapposizione orizzontale
             if r1['x'] + r1['w'] > r2['x'] and r2['x'] + r2['w'] > r1['x']:
-                # Se r2 è sotto r1, allora r1 -> r2 (r2 dipende da r1)
                 if r2['y'] >= r1['y'] + r1['h']:
                     dependencies[r1['id']].add(r2['id'])
 
-    # Aggiungi vincoli di spostamento a cascata
-    def add_dependency_constraints(root_id, visited=None):
+    # Vincoli a cascata
+    def apply_dependencies(rid, visited=None):
         if visited is None:
             visited = set()
-        visited.add(root_id)
-        for child_id in dependencies[root_id]:
-            if child_id not in visited:
-                # dy_child >= dy_root
-                model.Add(delta_y[child_id] >= delta_y[root_id])
-                add_dependency_constraints(child_id, visited)
+        visited.add(rid)
+        for dep in dependencies[rid]:
+            if dep not in visited:
+                model.Add(delta_y[dep] >= delta_y[rid])
+                apply_dependencies(dep, visited)
 
     for rid in dependencies:
-        add_dependency_constraints(rid)
-
-    # Costruisci y_finale per ciascun rettangolo
-    y_final = {r['id']: r['y'] + delta_y[r['id']] for r in rectangles}
+        apply_dependencies(rid)
 
     # Vincolo: ogni rettangolo deve stare nel contenitore
     for r in rectangles:
         model.Add(y_final[r['id']] + r['h'] <= container_height)
 
     # Linee di taglio candidate
-    all_y_coords = sorted({0, container_height} | 
-                         {r['y'] for r in rectangles} | 
-                         {r['y'] + r['h'] for r in rectangles})
+    all_y_coords = sorted({0, container_height} |
+                          {r['y'] for r in rectangles} |
+                          {r['y'] + r['h'] for r in rectangles})
     cut_active = {y: model.NewBoolVar(f'cut_{y}') for y in all_y_coords if 0 < y < container_height}
 
-    # Vincoli di taglio
+    # Vincoli: nessuna linea attiva può passare dentro un rettangolo
     for r in rectangles:
-        y_new = y_final[r['id']]
+        r_id = r['id']
+        y_new = y_final[r_id]
         for y_cut in cut_active:
-            is_above = model.NewBoolVar(f'above_{r["id"]}_{y_cut}')
-            model.Add(y_new >= y_cut).OnlyEnforceIf(is_above)
-            model.Add(y_new < y_cut).OnlyEnforceIf(is_above.Not())
+            within = model.NewBoolVar(f"cut_{y_cut}_in_{r_id}")
+            model.Add(y_new <= y_cut).OnlyEnforceIf(within)
+            model.Add(y_new + r['h'] > y_cut).OnlyEnforceIf(within)
+            model.AddBoolOr([within.Not(), cut_active[y_cut].Not()])  # Se within è True, cut deve essere False
 
-            model.Add(y_new + r['h'] <= y_cut).OnlyEnforceIf(
-                [cut_active[y_cut], is_above.Not()])
-            model.Add(y_new >= y_cut).OnlyEnforceIf(
-                [cut_active[y_cut], is_above])
-
-    # Funzione obiettivo: massimizza tagli e minimizza spostamenti
+    # Funzione obiettivo: più tagli, meno spostamenti
     model.Maximize(
         sum(cut_active.values()) * 1000 - sum(delta_y.values())
     )
@@ -86,6 +74,7 @@ def optimize_cuts(rectangles, container_width, container_height, max_dy=50):
             'total_displacement': sum(solver.Value(delta_y[r['id']]) for r in rectangles)
         }
     return None
+
 
 
 @app.route("/pack", methods=["POST"])
