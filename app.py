@@ -6,76 +6,95 @@ from ortools.sat.python import cp_model
 app = Flask(__name__)
 CORS(app)
 
-def optimize_cuts(rectangles, container_width, container_height, max_dy=50):
-    from ortools.sat.python import cp_model
-    model = cp_model.CpModel()
+def optimize_cuts(rectangles, container_width, container_height):
+    resolved_rectangles = rectangles.copy()  # Copia dei rettangoli per modifiche
+    current_cut_height = 0  # Altezza iniziale della linea di taglio
 
-    # Crea variabili delta_y
-    delta_y = {r['id']: model.NewIntVar(0, max_dy, f'dy_{r["id"]}') for r in rectangles}
-    y_final = {r['id']: r['y'] + delta_y[r['id']] for r in rectangles}
+    while True:
+        # Trova la criticità valida più alta sotto i 250
+        selected_critical = None
+        for rect in resolved_rectangles:
+            rect_bottom_y = rect["y"] + rect["h"]
+            if rect_bottom_y > current_cut_height:
+                # Trova i rettangoli attraversati dalla linea orizzontale
+                conflicts = []
+                for other_rect in resolved_rectangles:
+                    if rect["id"] == other_rect["id"]:
+                        continue
+                    if (
+                        rect_bottom_y > other_rect["y"] and
+                        rect_bottom_y < other_rect["y"] + other_rect["h"] and
+                        rect["x"] < other_rect["x"] + other_rect["w"] and
+                        rect["x"] + rect["w"] > other_rect["x"]
+                    ):
+                        conflicts.append(other_rect)
 
-    # Costruisci grafo di dipendenza (spostamento a cascata)
-    dependencies = {r['id']: set() for r in rectangles}
-    for i in range(len(rectangles)):
-        for j in range(len(rectangles)):
-            if i == j:
+                if conflicts and (rect_bottom_y - current_cut_height <= 250):
+                    selected_critical = {
+                        "line_y": rect_bottom_y,
+                        "conflicts": conflicts
+                    }
+                    break  # Risolvi immediatamente questa criticità
+
+        # Se non ci sono criticità valide, termina
+        if not selected_critical:
+            break
+
+        # Risolvi la criticità selezionata
+        current_cut_height = selected_critical["line_y"]
+        resolved_rectangles = propose_solution(
+            resolved_rectangles,
+            selected_critical["line_y"],
+            selected_critical["conflicts"],
+            container_height
+        )
+
+        # Dopo aver spostato i rettangoli, aggiorna le criticità
+        # Escludi i rettangoli sopra la linea di taglio appena risolta
+        resolved_rectangles = [
+            rect for rect in resolved_rectangles if rect["y"] + rect["h"] > current_cut_height
+        ]
+
+        # Aggiorna l'altezza totale per la prossima iterazione
+        current_cut_height += 250
+
+    return resolved_rectangles
+
+def propose_solution(rectangles, line_y, conflicts, container_height):
+    moved_rectangles = set()  # Per evitare movimenti duplicati
+
+    def move_rectangle(rect, move_by):
+        """Sposta un rettangolo verso il basso e aggiorna i rettangoli sottostanti."""
+        if rect["id"] in moved_rectangles:
+            return
+        moved_rectangles.add(rect["id"])
+
+        # Calcola la nuova posizione Y
+        new_y = rect["y"] + move_by
+        if new_y + rect["h"] > container_height:
+            raise ValueError(f"Rettangolo {rect['id']} non può essere spostato oltre il contenitore.")
+
+        rect["y"] = new_y
+
+        # Propaga il movimento ai rettangoli sottostanti
+        for other_rect in rectangles:
+            if other_rect["id"] == rect["id"]:
                 continue
-            r1 = rectangles[i]
-            r2 = rectangles[j]
-            if r1['x'] + r1['w'] > r2['x'] and r2['x'] + r2['w'] > r1['x']:
-                if r2['y'] >= r1['y'] + r1['h']:
-                    dependencies[r1['id']].add(r2['id'])
+            if (
+                rect["y"] < other_rect["y"] + other_rect["h"] and
+                rect["y"] + rect["h"] > other_rect["y"] and
+                rect["x"] < other_rect["x"] + other_rect["w"] and
+                rect["x"] + rect["w"] > other_rect["x"]
+            ):
+                move_rectangle(other_rect, move_by)
 
-    # Vincoli a cascata
-    def apply_dependencies(rid, visited=None):
-        if visited is None:
-            visited = set()
-        visited.add(rid)
-        for dep in dependencies[rid]:
-            if dep not in visited:
-                model.Add(delta_y[dep] >= delta_y[rid])
-                apply_dependencies(dep, visited)
+    # Sposta tutti i rettangoli coinvolti
+    for conflict in conflicts:
+        move_by = line_y - (conflict["y"] + conflict["h"])
+        if move_by > 0:
+            move_rectangle(conflict, move_by)
 
-    for rid in dependencies:
-        apply_dependencies(rid)
-
-    # Vincolo: ogni rettangolo deve stare nel contenitore
-    for r in rectangles:
-        model.Add(y_final[r['id']] + r['h'] <= container_height)
-
-    # Linee di taglio candidate
-    all_y_coords = sorted({0, container_height} |
-                          {r['y'] for r in rectangles} |
-                          {r['y'] + r['h'] for r in rectangles})
-    cut_active = {y: model.NewBoolVar(f'cut_{y}') for y in all_y_coords if 0 < y < container_height}
-
-    # Vincoli: nessuna linea attiva può passare dentro un rettangolo
-    for r in rectangles:
-        r_id = r['id']
-        y_new = y_final[r_id]
-        for y_cut in cut_active:
-            within = model.NewBoolVar(f"cut_{y_cut}_in_{r_id}")
-            model.Add(y_new <= y_cut).OnlyEnforceIf(within)
-            model.Add(y_new + r['h'] > y_cut).OnlyEnforceIf(within)
-            model.AddBoolOr([within.Not(), cut_active[y_cut].Not()])  # Se within è True, cut deve essere False
-
-    # Funzione obiettivo: più tagli, meno spostamenti
-    model.Maximize(
-        sum(cut_active.values()) * 1000 - sum(delta_y.values())
-    )
-
-    solver = cp_model.CpSolver()
-    status = solver.Solve(model)
-
-    if status == cp_model.OPTIMAL:
-        return {
-            'adjustments': {r['id']: solver.Value(delta_y[r['id']]) for r in rectangles},
-            'cuts': [y for y, var in cut_active.items() if solver.Value(var)],
-            'total_displacement': sum(solver.Value(delta_y[r['id']]) for r in rectangles)
-        }
-    return None
-
-
+    return rectangles
 
 @app.route("/pack", methods=["POST"])
 def pack():
@@ -122,13 +141,16 @@ def pack():
                     "bin": bin_index,
                 })
 
+            # Salva la disposizione originale
+            original_disposition = packed_rects.copy()
+
             # Calcola l'ottimizzazione dei tagli per questo bin
-            cut_plan = optimize_cuts(packed_rects, bin_width, bin_height)
+            optimized_disposition = optimize_cuts(packed_rects, bin_width, bin_height)
 
             all_bins_output.append({
                 "bin_index": bin_index,
-                "packed": packed_rects,
-                "optimization": cut_plan
+                "original": original_disposition,  # Disposizione originale
+                "optimized": optimized_disposition  # Disposizione ottimizzata
             })
 
         response = {
