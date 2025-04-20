@@ -1,53 +1,36 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS 
 from rectpack import newPacker
-from pulp import LpProblem, LpMinimize, LpVariable, LpBinary, LpContinuous, lpSum, PULP_CBC_CMD
+from ortools.sat.python import cp_model
 
 app = Flask(__name__)
 CORS(app)
 
-def optimize_cuts(rectangles, container_width, container_height, alpha=1, beta=0.05):
-    # Passo 1: possibili linee di taglio
-    H = sorted(set([0, container_height] + [r["y"] for r in rectangles] + [r["y"] + r["h"] for r in rectangles]))
-    V = sorted(set([0, container_width] + [r["x"] for r in rectangles] + [r["x"] + r["w"] for r in rectangles]))
-
-    # Step 2: modello
-    model = LpProblem("Minimize_Cuts_and_Adjustments", LpMinimize)
-
-    h_cuts = {y: LpVariable(f"h_{y}", cat=LpBinary) for y in H}
-    v_cuts = {x: LpVariable(f"v_{x}", cat=LpBinary) for x in V}
-    dy = {r["id"]: LpVariable(f"dy_{r['id']}", lowBound=0, cat=LpContinuous) for r in rectangles}
-
-    # Step 3: vincoli
+def optimize_cuts(rectangles, container_width, container_height):
+    model = cp_model.CpModel()
+    
+    # Variabili
+    delta_y = {r['id']: model.NewIntVar(0, 50, f'delta_{r["id"]}') for r in rectangles}
+    cuts_y = [model.NewBoolVar(f'cut_y_{y}') for y in range(0, container_height+1)]
+    
+    # Vincoli
     for r in rectangles:
-        rid = r["id"]
-        x_left = r["x"]
-        x_right = r["x"] + r["w"]
-        y_top = r["y"]
-        y_bottom = r["y"] + r["h"]
-
-        model += lpSum([
-            h_cuts[y] for y in H
-            if abs(y_top - y) <= 0.01 or abs(y_bottom - y) <= 0.01
-        ]) >= 1
-
-        model += lpSum([
-            v_cuts[x] for x in V
-            if x == x_left or x == x_right
-        ]) >= 1
-
-    # Step 4: funzione obiettivo
-    model += alpha * (lpSum(h_cuts.values()) + lpSum(v_cuts.values())) + beta * lpSum(dy.values())
-
-    # Step 5: risoluzione
-    model.solve(PULP_CBC_CMD(msg=0))
-
-    # Step 6: output
-    return {
-        "h_cuts": [y for y in H if h_cuts[y].varValue == 1],
-        "v_cuts": [x for x in V if v_cuts[x].varValue == 1],
-        "adjustments": {r["id"]: dy[r["id"]].varValue for r in rectangles}
-    }
+        y_new = r['y'] + delta_y[r['id']]
+        model.Add(y_new + r['h'] <= container_height)  # No overflow
+        
+        # Vincolo di continuità del taglio
+        for other in rectangles:
+            if other != r:
+                model.Add(y_new + r['h'] <= other['y'] + delta_y[other['id']]).OnlyEnforceIf(cuts_y[y_new + r['h']])
+    
+    # Funzione obiettivo
+    model.Minimize(sum(cuts_y) + sum(delta_y.values()))
+    
+    # Risoluzione
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
+    
+    return {r['id']: solver.Value(delta_y[r['id']]) for r in rectangles}
 
 @app.route("/pack", methods=["POST"])
 def pack():
