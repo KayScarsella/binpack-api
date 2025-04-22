@@ -23,18 +23,21 @@ def optimize_cuts(rectangles, container_width, container_height):
                         continue
                     if (
                         rect_bottom_y > other_rect["y"] and
-                        rect_bottom_y < other_rect["y"] + other_rect["h"] and
-                        rect["x"] < other_rect["x"] + other_rect["w"] and
-                        rect["x"] + rect["w"] > other_rect["x"]
+                        rect_bottom_y < other_rect["y"] + other_rect["h"]
                     ):
                         conflicts.append(other_rect)
+                if conflicts:
+                    # Se la linea è valida (sotto i 250), aggiorna selected_critical
+                    if rect_bottom_y - current_cut_height <= 250:
+                        selected_critical = {
+                            "line_y": rect_bottom_y,
+                            "conflicts": conflicts
+                        }
+                    else:
+                        break
+                else:
+                    current_cut_height = rect_bottom_y
 
-                if conflicts and (rect_bottom_y - current_cut_height <= 250):
-                    selected_critical = {
-                        "line_y": rect_bottom_y,
-                        "conflicts": conflicts
-                    }
-                    break  # Risolvi immediatamente questa criticità
 
         # Se non ci sono criticità valide, termina
         if not selected_critical:
@@ -48,26 +51,29 @@ def optimize_cuts(rectangles, container_width, container_height):
             selected_critical["conflicts"],
             container_height
         )
-
-        # Dopo aver spostato i rettangoli, aggiorna le criticità
-        # Escludi i rettangoli sopra la linea di taglio appena risolta
         resolved_rectangles = [
             rect for rect in resolved_rectangles if rect["y"] + rect["h"] > current_cut_height
         ]
 
-        # Aggiorna l'altezza totale per la prossima iterazione
-        current_cut_height += 250
-
     return resolved_rectangles
 
 def propose_solution(rectangles, line_y, conflicts, container_height):
-    moved_rectangles = set()  # Per evitare movimenti duplicati
+    moved_rectangles = {}  # Mappa per tracciare quanto è stato spostato ogni rettangolo
 
-    def move_rectangle(rect, move_by):
-        """Sposta un rettangolo verso il basso e aggiorna i rettangoli sottostanti."""
-        if rect["id"] in moved_rectangles:
-            return
-        moved_rectangles.add(rect["id"])
+    def move_rectangle(rect_id, move_by, area):
+        """
+        Sposta un rettangolo verso il basso e aggiorna i rettangoli sottostanti.
+        :param rect_id: ID del rettangolo da spostare.
+        :param move_by: Quantità di spostamento verso il basso.
+        :param area: Area di tocco (x_min, x_max) da considerare per i rettangoli sottostanti.
+        """
+        # Trova il rettangolo nella lista originale
+        rect = next(r for r in rectangles if r["id"] == rect_id)
+
+        if rect_id in moved_rectangles:
+            # Se il rettangolo è già stato spostato, spostalo solo se necessario
+            move_by = max(move_by, moved_rectangles[rect_id])
+        moved_rectangles[rect_id] = move_by
 
         # Calcola la nuova posizione Y
         new_y = rect["y"] + move_by
@@ -76,23 +82,28 @@ def propose_solution(rectangles, line_y, conflicts, container_height):
 
         rect["y"] = new_y
 
+        # Espandi l'area di tocco per i rettangoli sottostanti
+        new_area = (min(area[0], rect["x"]), max(area[1], rect["x"] + rect["w"]))
+
         # Propaga il movimento ai rettangoli sottostanti
         for other_rect in rectangles:
             if other_rect["id"] == rect["id"]:
                 continue
             if (
-                rect["y"] < other_rect["y"] + other_rect["h"] and
-                rect["y"] + rect["h"] > other_rect["y"] and
-                rect["x"] < other_rect["x"] + other_rect["w"] and
-                rect["x"] + rect["w"] > other_rect["x"]
+                other_rect["y"] < rect["y"] + rect["h"] and
+                other_rect["y"] + other_rect["h"] > rect["y"] and
+                other_rect["x"] + other_rect["w"] > new_area[0] and
+                other_rect["x"] < new_area[1]
             ):
-                move_rectangle(other_rect, move_by)
+                move_rectangle(other_rect["id"], move_by, new_area)
 
     # Sposta tutti i rettangoli coinvolti
     for conflict in conflicts:
-        move_by = line_y - (conflict["y"] + conflict["h"])
+        move_by = line_y - conflict["y"]
         if move_by > 0:
-            move_rectangle(conflict, move_by)
+            # L'area iniziale di tocco è limitata al rettangolo stesso
+            initial_area = (conflict["x"], conflict["x"] + conflict["w"])
+            move_rectangle(conflict["id"], move_by, initial_area)
 
     return rectangles
 
