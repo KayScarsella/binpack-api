@@ -27,17 +27,30 @@ def optimize_cuts(rectangles, container_width, container_height):
                         rect_bottom_y < other_rect["y"] + other_rect["h"]
                     ):
                         conflicts.append(other_rect)
+                        move_by = rect_bottom_y - (other_rect["y"])
+                        total_area_to_move += move_by * other_rect["w"]
                 if conflicts:
                     # Se la linea è valida (sotto i 250), aggiorna selected_critical
                     if rect_bottom_y - current_cut_height <= 250:
-                        selected_critical = {
-                            "line_y": rect_bottom_y,
-                            "conflicts": conflicts
-                        }
+                        if (
+                            selected_critical is None or
+                            total_area_to_move < selected_critical["total_area_to_move"] or
+                            (
+                                total_area_to_move == selected_critical["total_area_to_move"] and
+                                rect_bottom_y > selected_critical["line_y"]
+                            )
+                        ):
+                            selected_critical = {
+                                "line_y": rect_bottom_y,
+                                "conflicts": conflicts,
+                                "total_area_to_move": total_area_to_move
+                            }
                     else:
                         break
                 else:
-                    current_cut_height = rect_bottom_y
+                    if rect_bottom_y - current_cut_height <= 250:
+                        current_cut_height = rect_bottom_y
+                        selected_critical = None
 
 
         # Se non ci sono criticità valide, termina
@@ -55,9 +68,6 @@ def optimize_cuts(rectangles, container_width, container_height):
             selected_critical["conflicts"],
             container_height
         )
-        resolved_rectangles = [
-            rect for rect in resolved_rectangles if rect["y"] + rect["h"] > current_cut_height
-        ]
 
     return resolved_rectangles
 
@@ -160,12 +170,12 @@ def pack():
             original_disposition = deepcopy(packed_rects)
 
             # Calcola l'ottimizzazione dei tagli per questo bin
-            optimized_disposition = optimize_cuts(original_disposition, bin_width, bin_height)
+            optimized_disposition = optimize_cuts(deepcopy(packed_rects), bin_width, bin_height)
 
             all_bins_output.append({
                 "bin_index": bin_index,
-                "original": packed_rects,  # Disposizione originale
-                "optimized": original_disposition  # Disposizione ottimizzata
+                "original": original_disposition,  # Disposizione originale
+                "optimized": optimized_disposition  # Disposizione ottimizzata
             })
 
         response = {
@@ -179,15 +189,3 @@ def pack():
         return jsonify({"error": f"Valore non valido: {str(e)}"}), 400
     except Exception as e:
         return jsonify({"error": f"Errore interno: {str(e)}"}), 500
-    
-rectangles = [
-    {"id": "1", "x": 0, "y": 0, "w": 50, "h": 50},
-    {"id": "2", "x": 20, "y": 40, "w": 50, "h": 50},
-    {"id": "3", "x": 70, "y": 0, "w": 50, "h": 50},
-    {"id": "4", "x": 0, "y": 100, "w": 50, "h": 50},
-]
-container_width = 122
-container_height = 300
-print("Prima dell'ottimizzazione:", rectangles)
-optimized_rectangles = optimize_cuts(rectangles, container_width, container_height)
-print("Dopo l'ottimizzazione:", optimized_rectangles)
