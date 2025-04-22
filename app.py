@@ -42,7 +42,8 @@ def optimize_cuts(rectangles, container_width, container_height):
         # Se non ci sono criticità valide, termina
         if not selected_critical:
             break
-        if not any(rect["y"] + rect["h"] > selected_critical["line_y"] for rect in resolved_rectangles):
+        max_bottom_y = max(rect["y"] + rect["h"] for rect in resolved_rectangles)
+        if max_bottom_y - current_cut_height < 250:
             break
 
         # Risolvi la criticità selezionata
