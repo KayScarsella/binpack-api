@@ -1,3 +1,4 @@
+from copy import deepcopy
 from flask import Flask, request, jsonify
 from flask_cors import CORS 
 from rectpack import newPacker
@@ -156,15 +157,15 @@ def pack():
                 })
 
             # Salva la disposizione originale
-            original_disposition = packed_rects.copy()
+            original_disposition = deepcopy(packed_rects)
 
             # Calcola l'ottimizzazione dei tagli per questo bin
-            optimized_disposition = optimize_cuts(packed_rects, bin_width, bin_height)
+            optimized_disposition = optimize_cuts(original_disposition, bin_width, bin_height)
 
             all_bins_output.append({
                 "bin_index": bin_index,
-                "original": original_disposition,  # Disposizione originale
-                "optimized": optimized_disposition  # Disposizione ottimizzata
+                "original": packed_rects,  # Disposizione originale
+                "optimized": original_disposition  # Disposizione ottimizzata
             })
 
         response = {
@@ -178,3 +179,15 @@ def pack():
         return jsonify({"error": f"Valore non valido: {str(e)}"}), 400
     except Exception as e:
         return jsonify({"error": f"Errore interno: {str(e)}"}), 500
+    
+rectangles = [
+    {"id": "1", "x": 0, "y": 0, "w": 50, "h": 50},
+    {"id": "2", "x": 20, "y": 40, "w": 50, "h": 50},
+    {"id": "3", "x": 70, "y": 0, "w": 50, "h": 50},
+    {"id": "4", "x": 0, "y": 100, "w": 50, "h": 50},
+]
+container_width = 122
+container_height = 300
+print("Prima dell'ottimizzazione:", rectangles)
+optimized_rectangles = optimize_cuts(rectangles, container_width, container_height)
+print("Dopo l'ottimizzazione:", optimized_rectangles)
