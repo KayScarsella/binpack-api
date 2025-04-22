@@ -19,6 +19,7 @@ def optimize_cuts(rectangles, container_width, container_height):
             if rect_bottom_y > current_cut_height:
                 # Trova i rettangoli attraversati dalla linea orizzontale
                 conflicts = []
+                total_area_to_move = 0
                 for other_rect in resolved_rectangles:
                     if rect["id"] == other_rect["id"]:
                         continue
