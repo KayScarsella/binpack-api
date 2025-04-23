@@ -57,18 +57,63 @@ def optimize_cuts(rectangles, container_width, container_height):
         # Se non ci sono criticità valide, termina
         if not selected_critical:
             break
+        
         max_bottom_y = max(rect["y"] + rect["h"] for rect in resolved_rectangles)
         if max_bottom_y - current_cut_height < 250:
             break
 
-        # Risolvi la criticità selezionata
-        current_cut_height = selected_critical["line_y"]
-        resolved_rectangles = propose_solution(
-            resolved_rectangles,
-            selected_critical["line_y"],
-            selected_critical["conflicts"],
-            container_height
-        )
+        line_y = selected_critical["line_y"]
+        rectangles_below = [
+            rect for rect in resolved_rectangles if rect["y"] + rect["h"] > line_y
+        ]
+
+        # Rimuovi i rettangoli sotto la linea di taglio dalla lista principale
+        resolved_rectangles = [
+            rect for rect in resolved_rectangles if rect["y"] + rect["h"] <= line_y
+        ]
+
+        # Usa newPacker per ricalcolare la disposizione dei rettangoli sotto la linea di taglio
+        packer = newPacker(rotation=True)
+        for rect in rectangles_below:
+            packer.add_rect(rect["w"], rect["h"], rid=rect["id"])
+
+        # Aggiungi un contenitore con altezza ridotta
+        packer.add_bin(container_width, container_height - line_y)
+        packer.pack()
+
+        # Recupera i rettangoli riposizionati
+        for abin in packer:
+            for rect in abin:
+                resolved_rectangles.append({
+                    "id": rect.rid,
+                    "x": rect.x,
+                    "y": rect.y + line_y,  # Aggiungi l'altezza della linea di taglio
+                    "w": rect.width,
+                    "h": rect.height
+                })
+
+        # Gestisci i rettangoli non posizionati
+        unplaced = [rect for rect in packer.rect_list() if rect[5] is None]
+        if unplaced:
+            # Crea un nuovo contenitore per i rettangoli non posizionati
+            packer = newPacker(rotation=True)
+            for rect in unplaced:
+                packer.add_rect(rect[3], rect[4], rid=rect[2])
+            packer.add_bin(container_width, container_height)
+            packer.pack()
+
+            for abin in packer:
+                for rect in abin:
+                    resolved_rectangles.append({
+                        "id": rect.rid,
+                        "x": rect.x,
+                        "y": rect.y + line_y,  # Aggiungi l'altezza della linea di taglio
+                        "w": rect.width,
+                        "h": rect.height
+                    })
+
+        # Aggiorna l'altezza totale per la prossima iterazione
+        current_cut_height = line_y
 
     return resolved_rectangles
 
