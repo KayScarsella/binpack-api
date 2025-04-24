@@ -27,14 +27,29 @@ def optimize_cuts(rectangles, container_width, container_height):
                     conflicts.append(other)
                     move_by = bottom - other["y"]
                     area += move_by * other["w"]
-            if bottom - current_cut_height > 250:
-                break
             if conflicts:
-                if selected is None or area < selected["area"] or (area == selected["area"] and bottom > selected["line"]):
-                    selected = {"line": bottom, "conflicts": conflicts, "area": area}
+                 # Se la linea è valida (sotto i 250), aggiorna selected_critical
+                if bottom - current_cut_height <= 250:
+                    if (
+                        selected_critical is None or
+                         area < selected_critical["total_area_to_move"] or
+                         (
+                             area == selected_critical["total_area_to_move"] and
+                             bottom > selected_critical["line_y"]
+                         )
+                    ):
+                        selected_critical = {
+                             "line_y": bottom,
+                             "conflicts": conflicts,
+                             "total_area_to_move": area
+                         }
+                else:
+                    break
             else:
-                current_cut_height = bottom
-                selected = None
+                 if bottom - current_cut_height <= 250:
+                     current_cut_height = bottom
+                     selected_critical = None
+ 
         if not selected:
             break
 
