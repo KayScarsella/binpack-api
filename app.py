@@ -119,38 +119,46 @@ def pack():
             all_bins_output.append({
                 "bin_index": bin_index,
                 "original": original_disposition,
-                "optimized": optimized_disposition
+                "optimized": optimized_disposition,
+                "scarti": len(extra_unplaced) > 0
             })
             remaining.extend(extra_unplaced)
 
         for u in unplaced_rects:
             remaining.append({"id": u[2], "w": u[3], "h": u[4]})
 
-        for u in remaining:
-            placed = False
-            for b in all_bins_output:
+        while remaining:
+            target_bin = next((b for b in reversed(all_bins_output) if not b.get("scarti")), None)
+            if target_bin:
                 test = newPacker(rotation=True)
-                for r in b["optimized"]:
+                for r in target_bin["optimized"]:
                     test.add_rect(r["w"], r["h"], rid=r["id"])
-                test.add_rect(u["w"], u["h"], rid=u["id"])
+                for r in remaining:
+                    test.add_rect(r["w"], r["h"], rid=r["id"])
+                test.add_bin(W, H)
                 test.add_bin(W, H)
                 test.pack()
 
-                if any(r[2] == u["id"] and r[5] is not None for r in test.rect_list()):
-                    recs = []
-                    for abin in test:
-                        for r in abin:
-                            recs.append({"id": r.rid, "x": r.x, "y": r.y, "w": r.width, "h": r.height})
-                    optimized, _ = optimize_cuts(recs, W, H)
-                    b["optimized"] = optimized
-                    placed = True
-                    break
-            if not placed:
-                init = [{"id": u["id"], "x": 0, "y": 0, "w": u["w"], "h": u["h"]}]
-                opt, _ = optimize_cuts(init, W, H)
-                all_bins_output.append({"bin_index": len(all_bins_output), "original": init, "optimized": opt})
+                new_rects = []
+                not_placed = []
+                for bin_idx, abin in enumerate(test):
+                    for r in abin:
+                        if bin_idx == 0:
+                            new_rects.append({"id": r.rid, "x": r.x, "y": r.y, "w": r.width, "h": r.height})
+                        else:
+                            not_placed.append({"id": r.rid, "w": r.width, "h": r.height})
 
-        return jsonify({"bins": all_bins_output, "unplaced": len(remaining)})
+                optimized, extra_unplaced = optimize_cuts(new_rects, W, H)
+                target_bin["optimized"] = optimized
+                target_bin["scarti"] = len(extra_unplaced) > 0
+                remaining = not_placed + extra_unplaced
+            else:
+                init = [{"id": u["id"], "x": 0, "y": 0, "w": u["w"], "h": u["h"]} for u in remaining]
+                opt, ups = optimize_cuts(init, W, H)
+                all_bins_output.append({"bin_index": len(all_bins_output), "original": init, "optimized": opt, "scarti": len(ups) > 0})
+                remaining = ups
+
+        return jsonify({"bins": all_bins_output, "unplaced": 0})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
