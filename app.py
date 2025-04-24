@@ -10,12 +10,10 @@ def optimize_cuts(rectangles, container_width, container_height):
     resolved = rectangles.copy()
     unplaced = []
     current_cut_height = 0
-
-    # Sorting for deterministic behavior
-    resolved.sort(key=lambda r: r["y"] + r["h"])
     
     while True:
         selected = None
+        resolved.sort(key=lambda r: r["y"] + r["h"])
         for rect in resolved:
             bottom = rect["y"] + rect["h"]
             if bottom <= current_cut_height:
