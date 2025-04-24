@@ -35,11 +35,11 @@ def optimize_cuts(rectangles, container_width, container_height):
                          area < selected["total_area_to_move"] or
                          (
                              area == selected["total_area_to_move"] and
-                             bottom > selected["line_y"]
+                             bottom > selected["line"]
                          )
                     ):
                         selected = {
-                             "line_y": bottom,
+                             "line": bottom,
                              "conflicts": conflicts,
                              "total_area_to_move": area
                          }
