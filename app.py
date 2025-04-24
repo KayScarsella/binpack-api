@@ -14,6 +14,7 @@ def optimize_cuts(rectangles, container_width, container_height):
     while True:
         # Trova la criticità valida più alta sotto i 250
         selected_critical = None
+        resolved_rectangles.sort(key=lambda rect: rect["y"] + rect["h"])
         for rect in resolved_rectangles:
             rect_bottom_y = rect["y"] + rect["h"]
             if rect_bottom_y > current_cut_height:
