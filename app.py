@@ -2,237 +2,135 @@ from copy import deepcopy
 from flask import Flask, request, jsonify
 from flask_cors import CORS 
 from rectpack import newPacker
-from ortools.sat.python import cp_model
 
 app = Flask(__name__)
 CORS(app)
 
 def optimize_cuts(rectangles, container_width, container_height):
-    resolved_rectangles = rectangles.copy()  # Copia dei rettangoli per modifiche
-    current_cut_height = 0  # Altezza iniziale della linea di taglio
+    resolved = rectangles.copy()
+    unplaced = []
+    current_cut_height = 0
 
+    # Sorting for deterministic behavior
+    resolved.sort(key=lambda r: r["y"] + r["h"])
+    
     while True:
-        # Trova la criticità valida più alta sotto i 250
-        selected_critical = None
-        resolved_rectangles.sort(key=lambda rect: rect["y"] + rect["h"])
-        for rect in resolved_rectangles:
-            rect_bottom_y = rect["y"] + rect["h"]
-            if rect_bottom_y > current_cut_height:
-                # Trova i rettangoli attraversati dalla linea orizzontale
-                conflicts = []
-                total_area_to_move = 0
-                for other_rect in resolved_rectangles:
-                    if rect["id"] == other_rect["id"]:
-                        continue
-                    if (
-                        rect_bottom_y > other_rect["y"] and
-                        rect_bottom_y < other_rect["y"] + other_rect["h"]
-                    ):
-                        conflicts.append(other_rect)
-                        move_by = rect_bottom_y - (other_rect["y"])
-                        total_area_to_move += move_by * other_rect["w"]
-                if conflicts:
-                    # Se la linea è valida (sotto i 250), aggiorna selected_critical
-                    if rect_bottom_y - current_cut_height <= 250:
-                        if (
-                            selected_critical is None or
-                            total_area_to_move < selected_critical["total_area_to_move"] or
-                            (
-                                total_area_to_move == selected_critical["total_area_to_move"] and
-                                rect_bottom_y > selected_critical["line_y"]
-                            )
-                        ):
-                            selected_critical = {
-                                "line_y": rect_bottom_y,
-                                "conflicts": conflicts,
-                                "total_area_to_move": total_area_to_move
-                            }
-                    else:
-                        break
-                else:
-                    if rect_bottom_y - current_cut_height <= 250:
-                        current_cut_height = rect_bottom_y
-                        selected_critical = None
-
-
-        # Se non ci sono criticità valide, termina
-        if not selected_critical:
-            break
-        
-        max_bottom_y = max(rect["y"] + rect["h"] for rect in resolved_rectangles)
-        if max_bottom_y - current_cut_height < 250:
+        selected = None
+        for rect in resolved:
+            bottom = rect["y"] + rect["h"]
+            if bottom <= current_cut_height:
+                continue
+            # find overlaps
+            conflicts, area = [], 0
+            for other in resolved:
+                if other["id"] == rect["id"]:
+                    continue
+                if bottom > other["y"] and bottom < other["y"] + other["h"]:
+                    conflicts.append(other)
+                    move_by = bottom - other["y"]
+                    area += move_by * other["w"]
+            if bottom - current_cut_height > 250:
+                break
+            if conflicts:
+                if selected is None or area < selected["area"] or (area == selected["area"] and bottom > selected["line"]):
+                    selected = {"line": bottom, "conflicts": conflicts, "area": area}
+            else:
+                current_cut_height = bottom
+                selected = None
+        if not selected:
             break
 
-        line_y = selected_critical["line_y"]
-        rectangles_below = [
-            rect for rect in resolved_rectangles if rect["y"] + rect["h"] > line_y
-        ]
+        if max(r["y"] + r["h"] for r in resolved) - current_cut_height < 250:
+            break
 
-        # Rimuovi i rettangoli sotto la linea di taglio dalla lista principale
-        resolved_rectangles = [
-            rect for rect in resolved_rectangles if rect["y"] + rect["h"] <= line_y
-        ]
+        line = selected["line"]
+        below = [r for r in resolved if r["y"] + r["h"] > line]
+        resolved = [r for r in resolved if r["y"] + r["h"] <= line]
 
-        # Usa newPacker per ricalcolare la disposizione dei rettangoli sotto la linea di taglio
+        # pack below
         packer = newPacker(rotation=True)
-        for rect in rectangles_below:
-            packer.add_rect(rect["w"], rect["h"], rid=rect["id"])
-
-        # Aggiungi un contenitore con altezza ridotta
-        packer.add_bin(container_width, container_height - line_y)
+        for r in below:
+            packer.add_rect(r["w"], r["h"], rid=r["id"])
+        packer.add_bin(container_width, container_height - line)
         packer.pack()
 
-        # Recupera i rettangoli riposizionati
+        # retrieve placed
         for abin in packer:
-            for rect in abin:
-                resolved_rectangles.append({
-                    "id": rect.rid,
-                    "x": rect.x,
-                    "y": rect.y + line_y,  # Aggiungi l'altezza della linea di taglio
-                    "w": rect.width,
-                    "h": rect.height
-                })
+            for r in abin:
+                resolved.append({"id": r.rid, "x": r.x, "y": r.y + line, "w": r.width, "h": r.height})
+        # retrieve unplaced of this stage
+        stage_unplaced = [r for r in packer.rect_list() if r[5] is None]
+        if stage_unplaced:
+            unplaced.extend({"id": r[2], "w": r[3], "h": r[4]} for r in stage_unplaced)
 
-        # Gestisci i rettangoli non posizionati
-        unplaced = [rect for rect in packer.rect_list() if rect[5] is None]
-        if unplaced:
-            # Crea un nuovo contenitore per i rettangoli non posizionati
-            packer = newPacker(rotation=True)
-            for rect in unplaced:
-                packer.add_rect(rect[3], rect[4], rid=rect[2])
-            packer.add_bin(container_width, container_height)
-            packer.pack()
+        current_cut_height = line
 
-            for abin in packer:
-                for rect in abin:
-                    resolved_rectangles.append({
-                        "id": rect.rid,
-                        "x": rect.x,
-                        "y": rect.y + line_y,  # Aggiungi l'altezza della linea di taglio
-                        "w": rect.width,
-                        "h": rect.height
-                    })
-
-        # Aggiorna l'altezza totale per la prossima iterazione
-        current_cut_height = line_y
-
-    return resolved_rectangles
-
-def propose_solution(rectangles, line_y, conflicts, container_height):
-    moved_rectangles = {}  # Mappa per tracciare quanto è stato spostato ogni rettangolo
-
-    def move_rectangle(rect_id, move_by, area):
-        """
-        Sposta un rettangolo verso il basso e aggiorna i rettangoli sottostanti.
-        :param rect_id: ID del rettangolo da spostare.
-        :param move_by: Quantità di spostamento verso il basso.
-        :param area: Area di tocco (x_min, x_max) da considerare per i rettangoli sottostanti.
-        """
-        # Trova il rettangolo nella lista originale
-        rect = next(r for r in rectangles if r["id"] == rect_id)
-
-        if rect_id in moved_rectangles:
-            # Se il rettangolo è già stato spostato, spostalo solo se necessario
-            move_by = max(move_by, moved_rectangles[rect_id])
-        moved_rectangles[rect_id] = move_by
-
-        # Calcola la nuova posizione Y
-        new_y = rect["y"] + move_by
-        if new_y + rect["h"] > container_height:
-            raise ValueError(f"Rettangolo {rect['id']} non può essere spostato oltre il contenitore.")
-
-        rect["y"] = new_y
-
-        # Espandi l'area di tocco per i rettangoli sottostanti
-        new_area = (min(area[0], rect["x"]), max(area[1], rect["x"] + rect["w"]))
-
-        # Propaga il movimento ai rettangoli sottostanti
-        for other_rect in rectangles:
-            if other_rect["id"] == rect["id"]:
-                continue
-            if (
-                other_rect["y"] < rect["y"] + rect["h"] and
-                other_rect["y"] + other_rect["h"] > rect["y"] and
-                other_rect["x"] + other_rect["w"] > new_area[0] and
-                other_rect["x"] < new_area[1]
-            ):
-                move_rectangle(other_rect["id"], move_by, new_area)
-
-    # Sposta tutti i rettangoli coinvolti
-    for conflict in conflicts:
-        move_by = line_y - conflict["y"]
-        if move_by > 0:
-            # L'area iniziale di tocco è limitata al rettangolo stesso
-            initial_area = (conflict["x"], conflict["x"] + conflict["w"])
-            move_rectangle(conflict["id"], move_by, initial_area)
-
-    return rectangles
+    return resolved, unplaced
 
 @app.route("/pack", methods=["POST"])
 def pack():
     data = request.get_json()
-    
     if not data or 'bin_width' not in data or 'bin_height' not in data or 'rectangles' not in data:
         return jsonify({"error": "Dati mancanti o non validi"}), 400
-
     try:
-        bin_width = int(data["bin_width"])
-        bin_height = int(data["bin_height"])
+        W, H = int(data["bin_width"]), int(data["bin_height"])
         rects = data["rectangles"]
-
-        if bin_width <= 0 or bin_height <= 0:
-            return jsonify({"error": "Dimensioni del contenitore non valide"}), 400
-
         packer = newPacker(rotation=True)
-
         for r in rects:
-            w = int(r["w"])
-            h = int(r["h"])
+            w, h = int(r["w"]), int(r["h"])
             if w <= 0 or h <= 0:
                 return jsonify({"error": f"Dimensione rettangolo non valida: {r}"}), 400
             packer.add_rect(w, h, rid=r["id"])
-
-        max_bins = 100
-        for _ in range(max_bins):
-            packer.add_bin(bin_width, bin_height)
-
+        for _ in range(100): packer.add_bin(W, H)
         packer.pack()
 
-        all_bins_output = []
-        unplaced_rects = [rect for rect in packer.rect_list() if rect[5] is None]
+        # initial bins
+        bins = []
+        unplaced = [r for r in packer.rect_list() if r[5] is None]
+        for idx, abin in enumerate(packer):
+            rects0 = [{"id": r.rid, "x": r.x, "y": r.y, "w": r.width, "h": r.height} for r in abin]
+            opt, ups = optimize_cuts(deepcopy(rects0), W, H)
+            bins.append({"original": rects0, "optimized": opt, "unplaced": ups})
 
-        for bin_index, abin in enumerate(packer):
-            packed_rects = []
-            for rect in abin:
-                packed_rects.append({
-                    "id": rect.rid,
-                    "x": rect.x,
-                    "y": rect.y,
-                    "w": rect.width,
-                    "h": rect.height,
-                    "bin": bin_index,
-                })
+        # collect all unplaced
+        all_unplaced = []
+        for b in bins:
+            all_unplaced.extend(b["unplaced"])
 
-            # Salva la disposizione originale
-            original_disposition = deepcopy(packed_rects)
+        # try fitting all_unplaced into existing bins
+        remaining = []
+        for u in all_unplaced:
+            placed = False
+            for b in bins:
+                test = newPacker(rotation=True)
+                for r in b["optimized"]:
+                    test.add_rect(r["w"], r["h"], rid=r["id"])
+                test.add_rect(u["w"], u["h"], rid=u["id"])
+                test.add_bin(W, H)
+                test.pack()
+                if any(r[2]==u["id"] and r[5] is not None for r in test.rect_list()):
+                    # rebuild bin
+                    recs = []
+                    for abin in test:
+                        for r in abin:
+                            recs.append({"id": r.rid, "x": r.x, "y": r.y, "w": r.width, "h": r.height})
+                    b["optimized"], ups2 = optimize_cuts(recs, W, H)
+                    b["unplaced"] = ups2
+                    placed = True
+                    break
+            if not placed:
+                remaining.append(u)
 
-            # Calcola l'ottimizzazione dei tagli per questo bin
-            optimized_disposition = optimize_cuts(deepcopy(packed_rects), bin_width, bin_height)
+        # new bins for remaining
+        for u in remaining:
+            init = [{"id": u["id"], "x":0, "y":0, "w":u["w"], "h":u["h"]}]
+            opt, ups = optimize_cuts(init, W, H)
+            bins.append({"original": init, "optimized": opt, "unplaced": ups})
 
-            all_bins_output.append({
-                "bin_index": bin_index,
-                "original": original_disposition,  # Disposizione originale
-                "optimized": optimized_disposition  # Disposizione ottimizzata
-            })
-
-        response = {
-            "bins": all_bins_output,
-            "unplaced": len(unplaced_rects)
-        }
-
-        return jsonify(response)
-
-    except ValueError as e:
-        return jsonify({"error": f"Valore non valido: {str(e)}"}), 400
+        # format output
+        out = []
+        for i,b in enumerate(bins):
+            out.append({"bin_index": i, "original": b["original"], "optimized": b["optimized"]})
+        return jsonify({"bins": out, "unplaced": len(remaining)})
     except Exception as e:
-        return jsonify({"error": f"Errore interno: {str(e)}"}), 500
+        return jsonify({"error": str(e)}), 500
