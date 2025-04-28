@@ -8,6 +8,9 @@ from rectpack import newPacker
 app = Flask(__name__)
 CORS(app)
 
+# LISTA per salvare i valori di current_cut_height
+cut_heights_log = []
+
 def optimize_cuts(rectangles, container_width, container_height):
     unplaced = []
     current_cut_height = 0
@@ -29,7 +32,6 @@ def optimize_cuts(rectangles, container_width, container_height):
                     move_by = bottom - other["y"]
                     area += move_by * other["w"]
             if conflicts:
-                 # Se la linea è valida (sotto i 250), aggiorna selected_critical
                 if bottom - current_cut_height <= 250:
                     if (
                         selected is None or
@@ -49,8 +51,10 @@ def optimize_cuts(rectangles, container_width, container_height):
             else:
                  if bottom - current_cut_height <= 250:
                      current_cut_height = bottom
+                     # Aggiungo il valore alla lista
+                     cut_heights_log.append(current_cut_height)
                      selected = None
- 
+
         if not selected:
             break
 
@@ -75,11 +79,16 @@ def optimize_cuts(rectangles, container_width, container_height):
                 else:
                     unplaced.append({"id": r.rid, "w": r.width, "h": r.height})
         current_cut_height = line
+        # Aggiungo il valore alla lista
+        cut_heights_log.append(current_cut_height)
 
     return rectangles, unplaced
 
 @app.route("/pack", methods=["POST"])
 def pack():
+    # Pulisco il log a ogni nuova chiamata
+    cut_heights_log.clear()
+
     data = request.get_json()
     if not data or 'bin_width' not in data or 'bin_height' not in data or 'rectangles' not in data:
         return jsonify({"error": "Dati mancanti o non validi"}), 400
@@ -96,7 +105,6 @@ def pack():
             packer.add_bin(W, H)
         packer.pack()
 
-        # Mappatura rettangoli per bin
         rects_by_bin = defaultdict(list)
         unplaced_rects = [rect for rect in packer.rect_list() if rect[5] is None]
 
@@ -158,7 +166,11 @@ def pack():
                 all_bins_output.append({"bin_index": len(all_bins_output), "original": init, "optimized": opt, "scarti": len(ups) > 0})
                 remaining = ups
 
-        return jsonify({"bins": all_bins_output, "unplaced": 0})
+        return jsonify({
+            "bins": all_bins_output,
+            "unplaced": 0,
+            "cut_heights_log": cut_heights_log  # <- aggiunto qui
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
