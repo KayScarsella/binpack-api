@@ -164,11 +164,20 @@ def pack():
                 target_bin["cuts"] = cut_heights_log[:]
                 remaining = not_placed + extra_unplaced
             else:
-                init = [{"id": u["id"], "x": 0, "y": 0, "w": u["w"], "h": u["h"]} for u in remaining]
+                packer = newPacker(rotation=True)
+                for r in remaining:
+                    packer.add_rect(r["w"], r["h"], rid=r["id"])
+                packer.add_bin(W, H)
+                packer.pack()
+                init = []
+                for abin in packer:
+                    for r in abin:
+                        init.append({"id": r.rid, "x": r.x, "y": r.y, "w": r.width, "h": r.height})
+
                 opt, ups = optimize_cuts(deepcopy(init), W, H)
                 all_bins_output.append({
                     "bin_index": len(all_bins_output),
-                    "original": init,
+                    "original": [],
                     "optimized": opt,
                     "scarti": len(ups) > 0,
                     "cuts": cut_heights_log[:]
