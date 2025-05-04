@@ -132,6 +132,7 @@ def pack():
                 "scarti": len(extra_unplaced) > 0,
                 "cuts": bin_cut_heights_log
             })
+            cut_heights_log.clear()
             remaining.extend(extra_unplaced)
 
         for u in unplaced_rects:
@@ -162,6 +163,7 @@ def pack():
                 target_bin["optimized"] = optimized
                 target_bin["scarti"] = len(extra_unplaced) > 0
                 target_bin["cuts"] = cut_heights_log[:]
+                cut_heights_log.clear()
                 remaining = not_placed + extra_unplaced
             else:
                 packer = newPacker(rotation=True)
@@ -182,6 +184,7 @@ def pack():
                     "scarti": len(ups) > 0,
                     "cuts": cut_heights_log[:]
                 })
+                cut_heights_log.clear()
                 remaining = ups
 
         return jsonify({
