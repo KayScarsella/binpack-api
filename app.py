@@ -158,14 +158,14 @@ def pack():
                         else:
                             not_placed.append({"id": r.rid, "w": r.width, "h": r.height})
 
-                optimized, extra_unplaced = optimize_cuts(new_rects, W, H)
+                optimized, extra_unplaced = optimize_cuts(deepcopy(new_rects), W, H)
                 target_bin["optimized"] = optimized
                 target_bin["scarti"] = len(extra_unplaced) > 0
                 target_bin["cuts"] = cut_heights_log[:]
                 remaining = not_placed + extra_unplaced
             else:
                 init = [{"id": u["id"], "x": 0, "y": 0, "w": u["w"], "h": u["h"]} for u in remaining]
-                opt, ups = optimize_cuts(init, W, H)
+                opt, ups = optimize_cuts(deepcopy(init), W, H)
                 all_bins_output.append({
                     "bin_index": len(all_bins_output),
                     "original": init,
