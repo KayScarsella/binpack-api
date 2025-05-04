@@ -83,83 +83,6 @@ def optimize_cuts(rectangles, container_width, container_height):
         cut_heights_log.append(current_cut_height)
 
     return rectangles, unplaced
-
-def generate_guillotine_cuts(rectangles, container_width, container_height):
-    """
-    Genera la lista dei tagli ottimizzati per ottenere i rettangoli dati,
-    minimizzando il numero di tagli.
-    """
-    cuts = []
-
-    def slice_region(region, rects_in_region):
-        if len(rects_in_region) <= 1:
-            return  # Niente da tagliare
-
-        min_x = region["x"]
-        max_x = region["x"] + region["w"]
-        min_y = region["y"]
-        max_y = region["y"] + region["h"]
-
-        # Prova possibili tagli orizzontali (y)
-        possible_y_cuts = set()
-        for rect in rects_in_region:
-            if rect["y"] > min_y and rect["y"] < max_y:
-                possible_y_cuts.add(rect["y"])
-            if rect["y"] + rect["h"] > min_y and rect["y"] + rect["h"] < max_y:
-                possible_y_cuts.add(rect["y"] + rect["h"])
-
-        # Prova possibili tagli verticali (x)
-        possible_x_cuts = set()
-        for rect in rects_in_region:
-            if rect["x"] > min_x and rect["x"] < max_x:
-                possible_x_cuts.add(rect["x"])
-            if rect["x"] + rect["w"] > min_x and rect["x"] + rect["w"] < max_x:
-                possible_x_cuts.add(rect["x"] + rect["w"])
-
-        best_cut = None
-        best_balance = None
-
-        # Prova i tagli orizzontali
-        for y_cut in possible_y_cuts:
-            top_rects = [r for r in rects_in_region if r["y"] < y_cut]
-            bottom_rects = [r for r in rects_in_region if r["y"] >= y_cut]
-            if top_rects and bottom_rects:
-                balance = abs(len(top_rects) - len(bottom_rects))
-                if best_cut is None or balance < best_balance:
-                    best_cut = ("horizontal", y_cut)
-                    best_balance = balance
-
-        # Prova i tagli verticali
-        for x_cut in possible_x_cuts:
-            left_rects = [r for r in rects_in_region if r["x"] < x_cut]
-            right_rects = [r for r in rects_in_region if r["x"] >= x_cut]
-            if left_rects and right_rects:
-                balance = abs(len(left_rects) - len(right_rects))
-                if best_cut is None or balance < best_balance:
-                    best_cut = ("vertical", x_cut)
-                    best_balance = balance
-
-        if best_cut is not None:
-            dir, pos = best_cut
-            cuts.append({"type": dir, "at": pos})
-            if dir == "horizontal":
-                top = {"x": min_x, "y": min_y, "w": region["w"], "h": pos - min_y}
-                bottom = {"x": min_x, "y": pos, "w": region["w"], "h": max_y - pos}
-                slice_region(top, [r for r in rects_in_region if r["y"] < pos])
-                slice_region(bottom, [r for r in rects_in_region if r["y"] >= pos])
-            else:  # vertical
-                left = {"x": min_x, "y": min_y, "w": pos - min_x, "h": region["h"]}
-                right = {"x": pos, "y": min_y, "w": max_x - pos, "h": region["h"]}
-                slice_region(left, [r for r in rects_in_region if r["x"] < pos])
-                slice_region(right, [r for r in rects_in_region if r["x"] >= pos])
-
-    # Inizio dallo spazio completo
-    root_region = {"x": 0, "y": 0, "w": container_width, "h": container_height}
-    slice_region(root_region, rectangles)
-
-    return cuts
-
-
 @app.route("/pack", methods=["POST"])
 def pack():
     # Pulisco il log a ogni nuova chiamata
@@ -200,14 +123,14 @@ def pack():
         for bin_index, rect_list in rects_by_bin.items():
             original_disposition = deepcopy(rect_list)
             optimized_disposition, extra_unplaced = optimize_cuts(deepcopy(rect_list), W, H)
-            cuts = generate_guillotine_cuts(optimized_disposition, W, H)
+            bin_cut_heights_log = cut_heights_log[:]
 
             all_bins_output.append({
                 "bin_index": bin_index,
                 "original": original_disposition,
                 "optimized": optimized_disposition,
                 "scarti": len(extra_unplaced) > 0,
-                "cuts": cuts
+                "cuts": bin_cut_heights_log
             })
             remaining.extend(extra_unplaced)
 
@@ -238,7 +161,7 @@ def pack():
                 optimized, extra_unplaced = optimize_cuts(new_rects, W, H)
                 target_bin["optimized"] = optimized
                 target_bin["scarti"] = len(extra_unplaced) > 0
-                target_bin["cuts"] = generate_guillotine_cuts(optimized, W, H)
+                target_bin["cuts"] = cut_heights_log[:]
                 remaining = not_placed + extra_unplaced
             else:
                 init = [{"id": u["id"], "x": 0, "y": 0, "w": u["w"], "h": u["h"]} for u in remaining]
@@ -248,14 +171,13 @@ def pack():
                     "original": init,
                     "optimized": opt,
                     "scarti": len(ups) > 0,
-                    "cuts": generate_guillotine_cuts(opt, W, H)
+                    "cuts": cut_heights_log[:]
                 })
                 remaining = ups
 
         return jsonify({
             "bins": all_bins_output,
             "unplaced": 0,
-            "cut_heights_log": cut_heights_log  # <- aggiunto qui
         })
 
     except Exception as e:
