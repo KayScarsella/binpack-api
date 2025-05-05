@@ -63,8 +63,8 @@ def optimize_cuts(rectangles, container_width, container_height):
 
         line = selected["line"]
         below = [r for r in rectangles if r["y"] + r["h"] > line]
-        rectangles = [r for r in rectangles if r["y"] + r["h"] <= line]
-
+        above = [r for r in rectangles if r["y"] < current_cut_height and r["y"] + r["h"] > line]
+        rectangles = [r for r in rectangles if not (r in below or r in above)]
         packer = newPacker(rotation=True)
         for r in below:
             packer.add_rect(r["w"], r["h"], rid=r["id"])
@@ -78,6 +78,23 @@ def optimize_cuts(rectangles, container_width, container_height):
                     rectangles.append({"id": r.rid, "x": r.x, "y": r.y + line, "w": r.width, "h": r.height})
                 else:
                     unplaced.append({"id": r.rid, "w": r.width, "h": r.height})
+        available_height =  line -current_cut_height
+        if above and available_height > 0:
+            packer_above = newPacker(rotation=True)
+            for r in above:
+                packer_above.add_rect(r["w"], r["h"], rid=r["id"])
+            packer_above.add_bin(container_width, available_height)
+            packer_above.pack()
+            for abin in packer_above:
+                for r in abin:
+                    rectangles.append({
+                        "id": r.rid,
+                        "x": r.x,
+                        "y": r.y + current_cut_height,
+                        "w": r.width,
+                        "h": r.height
+                    })
+
         current_cut_height = line
         # Aggiungo il valore alla lista
         cut_heights_log.append(current_cut_height)
