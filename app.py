@@ -47,13 +47,17 @@ def optimize_cuts(rectangles, container_width, container_height):
                              "total_area_to_move": area
                          }
                 else:
+                    if (selected is None):
+                        selected = {
+                            "line": bottom,
+                            "conflicts": conflicts,
+                            "total_area_to_move": area
+                        }
                     break
             else:
-                 if bottom - current_cut_height <= 250:
-                     current_cut_height = bottom
-                     # Aggiungo il valore alla lista
-                     cut_heights_log.append(current_cut_height)
-                     selected = None
+                current_cut_height = bottom
+                cut_heights_log.append(current_cut_height)
+                selected = None
 
         if not selected:
             break
