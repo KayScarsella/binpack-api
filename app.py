@@ -48,6 +48,8 @@ def optimize_cuts(rectangles, container_width, container_height):
                          }
                 else:
                     if (selected is None):
+                        if area >= rect["w"] * rect["h"]:
+                            continue 
                         selected = {
                             "line": bottom,
                             "conflicts": conflicts,
