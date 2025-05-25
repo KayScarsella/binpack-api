@@ -48,44 +48,13 @@ def optimize_cuts(rectangles, container_width, container_height):
                          }
                 else:
                     if (selected is None):
-                        # Cerca tra tutti i rettangoli in conflitto quello con l'area minima da spostare
-                        min_area = float('inf')
-                        best_candidate = None
-                        current_area = area
-                        if current_area < min_area and current_area < rect["w"] * rect["h"]:
-                            min_area = current_area
-                            best_candidate = {
-                                "line": bottom,
-                                "conflicts": conflicts,
-                                "total_area_to_move": current_area
-                            }
-                        
-                        # Poi verifica i bottom di tutti i rettangoli in conflitto
-                        for conflict_rect in conflicts:
-                            conflict_bottom = conflict_rect["y"] + conflict_rect["h"]
-                            
-                            # Calcola i nuovi conflitti se scegliessimo questo bottom
-                            new_conflicts, new_area = [], 0
-                            for other in rectangles:
-                                if other["id"] == conflict_rect["id"]:
-                                    continue
-                                if conflict_bottom > other["y"] and conflict_bottom < other["y"] + other["h"]:
-                                    new_conflicts.append(other)
-                                    move_by = conflict_bottom - other["y"]
-                                    new_area += move_by * other["w"]
-                            
-                            if new_area < min_area and new_area < conflict_rect["w"] * conflict_rect["h"]:
-                                min_area = new_area
-                                best_candidate = {
-                                    "line": conflict_bottom,
-                                    "conflicts": new_conflicts,
-                                    "total_area_to_move": new_area
-                                }
-                        
-                        if best_candidate is not None:
-                            selected = best_candidate
-                        else:
-                            continue  # Nessun candidato valido trovato
+                        if area >= rect["w"] * rect["h"]:
+                            continue 
+                        selected = {
+                            "line": bottom,
+                            "conflicts": conflicts,
+                            "total_area_to_move": area
+                        }
                     break
             else:
                 current_cut_height = bottom
