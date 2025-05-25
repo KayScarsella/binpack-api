@@ -145,11 +145,11 @@ def pack():
     if not data or 'bin_width' not in data or 'bin_height' not in data or 'rectangles' not in data:
         return jsonify({"error": "Dati mancanti o non validi"}), 400
     try:
-        W, H = int(data["bin_width"]), int(data["bin_height"])
+        W, H = (data["bin_width"]), (data["bin_height"])
         rects = data["rectangles"]
         packer = newPacker(rotation=True)
         for r in rects:
-            w, h = int(r["w"]), int(r["h"])
+            w, h = (r["w"]), (r["h"])
             if w <= 0 or h <= 0:
                 return jsonify({"error": f"Dimensione rettangolo non valida: {r}"}), 400
             packer.add_rect(w, h, rid=r["id"])
