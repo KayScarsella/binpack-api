@@ -77,7 +77,7 @@ def optimize_cuts(rectangles, container_width, container_height):
                                 "conflicts": conflicts,
                                 "total_area_to_move": area
                             }
-                        break
+                    break
             else:
                 current_cut_height = bottom
                 cut_heights_log.append(current_cut_height)
