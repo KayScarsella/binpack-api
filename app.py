@@ -49,13 +49,35 @@ def optimize_cuts(rectangles, container_width, container_height):
                 else:
                     if (selected is None):
                         if area >= rect["w"] * rect["h"]:
-                            continue 
-                        selected = {
-                            "line": bottom,
-                            "conflicts": conflicts,
-                            "total_area_to_move": area
-                        }
-                    break
+                            continue
+                        best_alternative = None
+                        for rett in conflicts:
+                            bottom1 = rett["y"] + rett["h"]
+                            current_conflicts = []
+                            current_area = 0
+                            for other in rectangles:
+                                if other["id"] == rett["id"]:
+                                    continue
+                                if bottom1 > other["y"] and bottom1 < other["y"] + other["h"]:
+                                    current_conflicts.append(other)
+                                    move_by = bottom1 - other["y"]
+                                    current_area += move_by * other["w"]
+                            if current_area < area:
+                                if best_alternative is None or current_area < best_alternative["total_area_to_move"]:
+                                    best_alternative = {
+                                        "line": bottom1,
+                                        "conflicts": current_conflicts,
+                                        "total_area_to_move": current_area
+                                    }
+                        if best_alternative is not None:
+                            selected = best_alternative
+                        else:
+                            selected = {
+                                "line": bottom,
+                                "conflicts": conflicts,
+                                "total_area_to_move": area
+                            }
+                        break
             else:
                 current_cut_height = bottom
                 cut_heights_log.append(current_cut_height)
