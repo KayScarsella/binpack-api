@@ -69,7 +69,7 @@ def optimize_cuts(rectangles, container_width, container_height):
 
         line = selected["line"]
         below = [r for r in rectangles if r["y"] + r["h"] > line]
-        above = [r for r in rectangles if r["y"] < current_cut_height and r["y"] + r["h"] > line]
+        above = [r for r in rectangles if r["y"] >= current_cut_height and r["y"] + r["h"] <= line]
         rectangles = [r for r in rectangles if not (r in below or r in above)]
         packer = newPacker(rotation=True)
         for r in below:
