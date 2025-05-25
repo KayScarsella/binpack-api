@@ -86,7 +86,7 @@ def optimize_cuts(rectangles, container_width, container_height):
         if not selected:
             break
 
-        if max(r["y"] + r["h"] for r in rectangles) - current_cut_height < 250:
+        if max(r["y"] + r["h"] for r in rectangles) - current_cut_height < 100:
             break
 
         line = selected["line"]
