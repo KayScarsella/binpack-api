@@ -91,14 +91,22 @@ def optimize_cuts(rectangles, container_width, container_height):
                 packer_above.add_rect(r["w"], r["h"], rid=r["id"])
             packer_above.add_bin(container_width, available_height)
             packer_above.pack()
-            for abin in enumerate(packer_above):
-                for r in abin:
+            for rect in packer_above.rect_list():
+                bin_index = rect[0]
+                r_id = rect[5]
+                if bin_index == 0:
                     rectangles.append({
-                        "id": r.rid,
-                        "x": r.x,
-                        "y": r.y + current_cut_height,
-                        "w": r.width,
-                        "h": r.height
+                        "id": r_id,
+                        "x": rect[1],
+                        "y": rect[2] + current_cut_height,
+                        "w": rect[3],
+                        "h": rect[4]
+                    })
+                else:
+                    unplaced.append({
+                        "id": r_id,
+                        "w": rect[3],
+                        "h": rect[4]
                     })
 
         current_cut_height = line
